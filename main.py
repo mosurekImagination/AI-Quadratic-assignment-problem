@@ -4,7 +4,7 @@ import itertools as itertools
 import matplotlib.pyplot as plt
 import logging as log
 import datetime
-import selection from 'roulette_method'
+import time as tlib
 
 #OPTIMAL SCENARIO
 # Had12
@@ -30,18 +30,18 @@ import selection from 'roulette_method'
 
 #########PROPERTIES##############
 
-ITERATIONS = 100                      #LICZBA ITERACJI
+ITERATIONS = 1                      #LICZBA ITERACJI
 POP_SIZE = 100                      #ROZMIAR POPULACJI
-GEN = 150                           #LICZBA POKOLEN
+GEN = 1000                           #LICZBA POKOLEN
 PX = 0.7                             #PRAWDOPODOBIENSTWO KRZYŻOWANIA
-PM = 0.2                            #PRAWDOPODOIEŃSTWO MUTACJI
+PM = 0.6                            #PRAWDOPODOIEŃSTWO MUTACJI
 TOUR = 5                            #ROZMIAR TURNIEJU
-SAVE_STRONGEST = True              #0 FALSE #1 TRUE
-TEST_TWO_SAVE_STRONGEST = False      # TEST TWO VARIATIONS OF SAVE_STORNGEST
-SELECTION_METHOD = 1                # 0: ROULETTE 1:TOURNAMENT
-TEST_MORE_METHODS = 1               # IF different than 1 SELECTION METHOD should be 0
+SAVE_STRONGEST = True           #0 FALSE #1 TRUE
+TEST_TWO_SAVE_STRONGEST = True     # TEST TWO VARIATIONS OF SAVE_STORNGEST
+SELECTION_METHOD = 0                # 0: ROULETTE 1:TOURNAMENT
+METHODS_TO_TEST = 1               # IF different than 1 SELECTION METHOD should be 0
 DATAFILEPATH = 'input/had12.dat'    #PATH TO FILE WITH INITIALISE DATA
-
+MUTATION_REPEAT = 2                 #REPEATS OF MUTATION ACTION IF MUTATE
 ########END OF PROPERTIES###########
 
 
@@ -104,6 +104,62 @@ def getCostsVector(population):
     return costVector
 
 
+def rouletteMethod(population, costVector):
+    #costVector = (costVector-min(costVector)+1)*1.5             #SHOULDNT BE DONE LIKE THIS
+    sumCost = sum(costVector)
+    adjVector = sumCost/costVector
+    sumAdj = sum(adjVector)
+    probabilityVector = adjVector/sumAdj
+    parents = np.zeros(population.shape[0], dtype=int)
+    newPopulation = np.zeros((population.shape[0], population.shape[1]), dtype=int)
+    for i in range(0, population.shape[0]):
+        parents[i] = pickOneRoulette(probabilityVector)
+        newPopulation[i] = population[parents[i]]
+    return newPopulation
+
+
+def pickOneRoulette(probabilityVector):
+    pick = random.uniform(0, 1)
+    sum = 0
+    for i in range(0, probabilityVector.shape[0]):
+        sum += probabilityVector[i]
+        if(sum >= pick):
+            return i
+    return probabilityVector.shape[0]-1
+
+
+def tournamentMethod(population, costVector):
+    parents = np.zeros(population.shape[0], dtype=int)
+    newPopulation = np.zeros((population.shape[0], population.shape[1]), dtype=int)
+
+    for i in range(0, population.shape[0]):
+        parents[i] = pickOneTournament(costVector)
+        newPopulation[i] = population[parents[i]]
+
+    return newPopulation
+
+
+def pickOneTournament(costVector):
+    tournamentTeam = np.zeros(TOUR, dtype=int)
+
+    for i in range(0, tournamentTeam.shape[0]):
+        tournamentTeam[i] = getRandomInvidivual()
+
+    return costVector.tolist().index(min(costVector[tournamentTeam]))
+
+
+def selection(population):
+    costVector = getCostsVector(population)
+    if SELECTION_METHOD == 0:
+        next_population = rouletteMethod(population, costVector)
+    if SELECTION_METHOD == 1:
+        next_population = tournamentMethod(population, costVector)
+    if(SAVE_STRONGEST == True):
+        bestIndividual = population[costVector.tolist().index(min(costVector))]
+        newCost = getCostsVector(next_population).tolist()
+        worstIndividualIndex = newCost.index(min(newCost))
+        next_population[worstIndividualIndex] = bestIndividual
+    return next_population
 
 
 def getRandomInvidivual():
@@ -155,9 +211,10 @@ def crossover(population):
 
 
 def mutate(individual):
-    i = random.randint(0, individual.shape[0] - 1)
-    j = random.randint(0, individual.shape[0] - 1)
-    individual[i], individual[j] = individual[j], individual[i]
+    for k in range(0, MUTATION_REPEAT):
+        i = random.randint(0, individual.shape[0] - 1)
+        j = random.randint(0, individual.shape[0] - 1)
+        individual[i], individual[j] = individual[j], individual[i]
     return individual
 
 
@@ -193,6 +250,7 @@ def preparePlot(field, minOutput, maxOutput, avgOutput, globalMinOutput):
 
 
 def geneticAlgorithm():
+    starttime = tlib.time()
     pop = initialise(POP_SIZE)
     minOutput = []
     avgOutput = []
@@ -213,11 +271,27 @@ def geneticAlgorithm():
         avgOutput.append(np.average(getCostsVector(pop)))
         globalMinOutput.append(min(minOutput))
 
+    endTime = tlib.time()
     preparePlot(field, minOutput, maxOutput, avgOutput, globalMinOutput)
-
     log.info("min valuse {}".format(min(minOutput)))
     print("min value {} - global min 1652".format(min(minOutput)))
+    print("Evaluation time: {} s".format(endTime-starttime))
+    print("SELECTION METHOD: {}".format(SELECTION_METHOD))
     return getBestIndividual(pop)
+
+def randomSearch(time):
+    bestIndividual = initialise(1)
+    minCost = getCostsVector(bestIndividual)
+    startTime = tlib.time()
+    i =0
+    while tlib.time() - startTime < time:
+        newIndividual = initialise(1)
+        i=i+1
+        if getCostsVector(newIndividual) < minCost:
+            minCost = getCostsVector(bestIndividual)
+            bestIndividual = newIndividual
+            print("Iteration: {} Min cost: {}".format(i, minCost))
+    return minCost, bestIndividual
 
 def getDate(inFile=True):
     if inFile:
@@ -231,21 +305,26 @@ def logInfo():
     else:
         log.info("###SAVE_STRONGEST DISABLED")
 
-    if SELECTION_METHOD ==0:
+    if SELECTION_METHOD == 0:
         log.info("###ROULETTE METHOD")
     else:
         log.info("###TOURNAMENT METHOD")
+
+# minCost, bestIndividual = randomSearch(10)
+# print("Min cost: {} of Individual: {}".format(minCost, bestIndividual))
+
+#def greedySearch():
 
 results=[]
 name = 'logs/'+getDate(inFile=False)+'.log'
 log.basicConfig(filename=name, level=log.INFO, format='%(message)s')
 
-for i in range(0, 2*TEST_MORE_METHODS):
-    if TEST_MORE_METHODS > 1:
-        SELECTION_METHOD = i % TEST_MORE_METHODS
+for i in range(0, METHODS_TO_TEST):
+    if METHODS_TO_TEST > 1:
+        SELECTION_METHOD = i % METHODS_TO_TEST
 
     if TEST_TWO_SAVE_STRONGEST == True:
-        if i == 2*TEST_MORE_METHODS-1:
+        if i == 2*METHODS_TO_TEST-1:
             SAVE_STRONGEST = 0
 
     logInfo()
